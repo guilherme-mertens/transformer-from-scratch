@@ -31,9 +31,9 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
 
-        self.pe = pe.unsqueeze(0)  # (1, seq_len, d_model)
+        pe = pe.unsqueeze(0)  # (1, seq_len, d_model)
 
-        self.register_buffer("pe", self.pe)
+        self.register_buffer("pe", pe)
 
 
     def forward(self, x):
@@ -59,6 +59,7 @@ class LayerNormalization(nn.Module):
 class FeedForwardBlock(nn.Module):
     
     def __init__(self, d_model: int, d_ff: int, dropout: float):
+        super().__init__()
         self.linear1 = nn.Linear(d_model, d_ff)
         self.linear2 = nn.Linear(d_ff, d_model)
         self.relu = nn.ReLU()
@@ -161,12 +162,12 @@ class Encoder(nn.Module):
 
 class DecoderBlock(nn.Module):
 
-    def __init__(self, features: int, self_attention_block: MultiHeadAttentionBlock, cross_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock, dropout: float) -> None:
+    def __init__(self, self_attention_block: MultiHeadAttentionBlock, cross_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock, dropout: float) -> None:
         super().__init__()
         self.self_attention_block = self_attention_block
         self.cross_attention_block = cross_attention_block
         self.feed_forward_block = feed_forward_block
-        self.residual_connections = nn.ModuleList([ResidualConnection(features, dropout) for _ in range(3)])
+        self.residual_connections = nn.ModuleList([ResidualConnection(dropout) for _ in range(3)])
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
         x = self.residual_connections[0](x, lambda x: self.self_attention_block(x, x, x, tgt_mask))
@@ -177,10 +178,10 @@ class DecoderBlock(nn.Module):
 
 class Decoder(nn.Module):
 
-    def __init__(self, features: int, layers: nn.ModuleList) -> None:
+    def __init__(self, layers: nn.ModuleList) -> None:
         super().__init__()
         self.layers = layers
-        self.norm = LayerNormalization(features)
+        self.norm = LayerNormalization()
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
         for layer in self.layers:
@@ -208,6 +209,7 @@ class Transformer(nn.Module):
                 src_pos: PositionalEncoding,
                 tgt_pos: PositionalEncoding,
                 projection_layer: ProjectionLayer):
+        super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.src_embed = src_embed
@@ -249,7 +251,7 @@ def build_transformer(src_vocab_size: int, tgt_vocab_size: int,
     for _ in range(N):
         encoder_self_attention_block = MultiHeadAttentionBlock(d_model, h, dropout)
         feed_forward_block = FeedForwardBlock(d_model, d_ff, dropout)
-        encoder_block = EncoderBlock(d_model, encoder_self_attention_block, feed_forward_block, dropout)
+        encoder_block = EncoderBlock(encoder_self_attention_block, feed_forward_block, dropout)
         encoder_blocks.append(encoder_block)
     
     # Create the decoder blocks
@@ -258,12 +260,12 @@ def build_transformer(src_vocab_size: int, tgt_vocab_size: int,
         decoder_self_attention_block = MultiHeadAttentionBlock(d_model, h, dropout)
         decoder_cross_attention_block = MultiHeadAttentionBlock(d_model, h, dropout)
         feed_forward_block = FeedForwardBlock(d_model, d_ff, dropout)
-        decoder_block = DecoderBlock(d_model, decoder_self_attention_block, decoder_cross_attention_block, feed_forward_block, dropout)
+        decoder_block = DecoderBlock(decoder_self_attention_block, decoder_cross_attention_block, feed_forward_block, dropout)
         decoder_blocks.append(decoder_block)
 
     # Create the encoder and decoder
-    encoder = Encoder(d_model, nn.ModuleList(encoder_blocks))
-    decoder = Decoder(d_model, nn.ModuleList(decoder_blocks))
+    encoder = Encoder(nn.ModuleList(encoder_blocks))
+    decoder = Decoder(nn.ModuleList(decoder_blocks))
     
     # Create the projection layer
     projection_layer = ProjectionLayer(d_model, tgt_vocab_size)
@@ -279,6 +281,6 @@ def build_transformer(src_vocab_size: int, tgt_vocab_size: int,
     return transformer
 
 if __name__=="__main__":
-    a = PositionalEncoding(6, 20, 0.4)
+    transformer = build_transformer(50000, 30000, 100, 100)
 
 
