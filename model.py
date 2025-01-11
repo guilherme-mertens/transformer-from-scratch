@@ -53,7 +53,7 @@ class LayerNormalization(nn.Module):
         mean = x.mean(dim = -1, keepdim=True)
         std = x.std(dim = -1, keepdim=True)
 
-        return self.alpha * (x-mean) / (std + self.eps) + self.bias
+        return self.alpha * (x-mean) / (std + self.eps) + self.beta
 
 
 class FeedForwardBlock(nn.Module):
@@ -90,11 +90,11 @@ class MultiHeadAttentionBlock(nn.Module):
         d_k = query.shape[-1]
 
         # (Batch, h, seq_len, d_k) --> (Batch, h, seq_len, seq_len)
-        attention_scores = query @ key.transpose(-2, -1) / math.sqrt(d_k)
+        attention_scores = (query @ key.transpose(-2, -1)) / math.sqrt(d_k)
 
         if mask is not None:
             attention_scores.masked_fill_(mask== 0, -1e9)
-        attention_scores = attention_scores.soft_mask(dim = -1)
+        attention_scores = attention_scores.softmax(dim = -1)
         
         if dropout is not None:
             attention_scores = dropout(attention_scores)
@@ -113,10 +113,10 @@ class MultiHeadAttentionBlock(nn.Module):
         key = key.view(key.shape[0], key.shape[1], self.h, self.d_k).transpose(1, 2)
         value = value.view(value.shape[0], value.shape[1], self.h, self.d_k).transpose(1, 2)
 
-        x, attention_scores = MultiHeadAttentionBlock.attention(query, key, value, mask, self.dropout)
+        x, self.attention_scores = MultiHeadAttentionBlock.attention(query, key, value, mask, self.dropout)
 
         # (Batch, h, seq_len, d_k) --> (Batch, seq_len, h, d_k) --> (Batch, seq_len, d_model)
-        x = x.transpose(1, 2).contigous().view(query.shape[0], -1, self.h*self.d_v)
+        x = x.transpose(1, 2).contiguous().view(query.shape[0], -1, self.h*self.d_v)
 
         return self.w_o(x)
 
@@ -192,13 +192,13 @@ class Decoder(nn.Module):
 
 class ProjectionLayer(nn.Module):
 
-    def __init__(self, d_model, vocab_size) -> None:
+    def __init__(self, d_model: int, vocab_size: int) -> None:
         super().__init__()
         self.proj = nn.Linear(d_model, vocab_size)
 
     def forward(self, x) -> None:
         # (batch, seq_len, d_model) --> (batch, seq_len, vocab_size)
-        return self.proj(x)
+        return torch.log_softmax(self.proj(x), dim = -1)
     
 class Transformer(nn.Module):
     
